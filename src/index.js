@@ -19,14 +19,14 @@ const sendEmail = async html => {
     let mailOptions = {
       from: process.env.SCRAPER_USERNAME, // sender address
       to: process.env.SCRAPER_TARGET_EMAIL, // list of receivers
-      subject: 'LotR items in stock!', // Subject line
+      subject: 'Games in stock!', // Subject line
       html,
     };
 
     // send mail with defined transport object
     let info = await transporter.sendMail(mailOptions);
 
-    console.log('Message sent: %s', info.messageId);
+    console.log('Message sent: %s', html, info.messageId);
   } catch (e) {
     console.error(e);
   }
@@ -38,18 +38,11 @@ const createEmail = inStockUrls => {
   }, '')}</ul>`;
 };
 
-const gamesLoreUrls = [
-  'https://www.gameslore.com/acatalog/PR_The_Lord_Of_The_Rings_LCG_The_Hobbit_On_The_Doorstep_Saga_Expansion.html',
-  'https://www.gameslore.com/acatalog/PR_The_Lord_Of_The_Rings_LCG_The_Stewards_Fear_Adventure_Pack.html',
-  'https://www.gameslore.com/acatalog/PR_The_Lord_Of_The_Rings_LCG_The_Morgul_Vale_Adventure_Pack.html',
-  'https://www.gameslore.com/acatalog/PR_The_Lord_Of_The_Rings_LCG_Assault_On_Osgiliath_Adventure_Pack.html',
-  'https://www.gameslore.com/acatalog/PR_The_Lord_Of_The_Rings_LCG_The_Mumakil_Adventure_Pack.html',
-  'https://www.gameslore.com/acatalog/PR_The_Lord_Of_The_Rings_LCG_Race_Across_Harad_Adventure_Pack.html',
-  'https://www.gameslore.com/acatalog/PR_The_Lord_Of_The_Rings_LCG_Beneath_The_Sands_Adventure_Pack.html',
-  'https://www.gameslore.com/acatalog/PR_The_Lord_Of_The_Rings_LCG_The_Black_Serpent_Adventure_Pack.html',
-];
+const gamesLoreUrls = [];
 
 const ffgSKUs = [];
+
+const bgExtrasUrls = ['https://www.bgextras.co.uk/star-wars-imperial-assault-i2123.htm'];
 
 const isResponseSuccessful = response => response.status === 200 && Boolean(response.data);
 const areItemsAvailable = items => items.length > 0;
@@ -60,6 +53,21 @@ const isItemInStockOnGamesLore = html => {
 };
 
 const isItemInStockOnFfg = responseData => responseData['in_stock'] === 'available';
+
+const isItemOnSaleOnBgExtras = html => {
+  const $ = cheerio.load(html);
+  const priceElement = $('#ROC_itemprice');
+  const inStock = !!$('.ROC_vp_itemaddtocartenabled');
+
+  if (!priceElement || !inStock) {
+    console.log('Not available on bgextras');
+    return false;
+  }
+
+  const price = Number(priceElement.text().replace(/[^\d.-]/g, ''));
+
+  return price < 81;
+};
 
 // GamesLore scraper stream
 const gamesLore$ = from(gamesLoreUrls).pipe(
@@ -86,7 +94,16 @@ const ffgApi$ = from(ffgSKUs).pipe(
   toArray()
 );
 
-const mergedStreams$ = merge(gamesLore$, ffgApi$);
+// GamesLore scraper stream
+const bgExtras$ = from(bgExtrasUrls).pipe(
+  map(url => from(axios.get(url))),
+  mergeAll(),
+  filter(response => isResponseSuccessful(response) && isItemOnSaleOnBgExtras(response.data)),
+  map(inStockResponse => inStockResponse.config.url),
+  toArray()
+);
+
+const mergedStreams$ = merge(gamesLore$, ffgApi$, bgExtras$);
 mergedStreams$.subscribe(
   inStockUrls => areItemsAvailable(inStockUrls) && sendEmail(createEmail(inStockUrls))
 );
