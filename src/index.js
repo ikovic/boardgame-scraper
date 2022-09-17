@@ -66,7 +66,7 @@ const isItemOnSaleOnBgExtras = html => {
 
   const price = Number(priceElement.text().replace(/[^\d.-]/g, ''));
 
-  return price < 81;
+  return price < 80;
 };
 
 // GamesLore scraper stream
